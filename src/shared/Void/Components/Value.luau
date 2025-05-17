@@ -2,15 +2,14 @@
 
 local Event = require("./Event")
 
-export type new = <T>(Value: T) -> Value
+export type new = (Value: any) -> ReactiveValue
 
 type Module = {
-    __call: (self: Value, ...any) -> any,
+    __call: (self: ReactiveValue, ...any) -> any,
     new: new
 }
 
-export type Value = typeof(setmetatable({} :: {
-    __call: (...any) -> any,
+export type ReactiveValue = typeof(setmetatable({} :: {
     Value: any,
     Event: Event.Event,
 }, {} :: Module))
@@ -27,12 +26,12 @@ module.__call = function(self, ...): any
     return OldValue
 end
 
-function module.new<T>(Value: T): Value
+function module.new<T>(Value: T): ReactiveValue
     if typeof(Value) == "nil" then
-        return (nil :: any) :: Value
+        return (nil :: any) :: ReactiveValue
     end
 
-    local self: Value = setmetatable({}, module) :: Value
+    local self: ReactiveValue = setmetatable({}, module) :: ReactiveValue
     self.Value = Value
     self.Event = Event.new()
 
