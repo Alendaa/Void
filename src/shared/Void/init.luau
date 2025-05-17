@@ -1,22 +1,34 @@
 --!strict
 
-local ComponentValue = require("./VoidGui/Components/Value")
+local ComponentValue = require("./Void/Components/ReactiveValue")
+
+export type ReactiveValue = ComponentValue.ReactiveValue
 
 export type Structure<T> = {
-	Children: Structure<T>
+	Class: string,
+	Children: {[number]: Structure<T>?},
 } & T
 
-export type Gui<T> = typeof(setmetatable({} :: {}, {} :: Module)) & T
+export type Gui<T> = typeof(setmetatable({} :: {}, {} :: Module)) & GuiProperties<T> & GuiMethods<T> & T
+
+type GuiProperties<T> = {
+	_Children: {[number]: {Name: string, Value: Gui<T>}},
+	_Connections: {[string]: RBXScriptConnection}
+}
+
+type GuiMethods<T> = {
+	FindFirstChild: <Child>(self: Gui<T>, Name: string, Recursive: boolean?) -> Gui<T>?,
+	GetChildren: (self: Gui<T>) -> {[number]: Gui<T>}
+}
 
 type Module = {
 	__index: (t: {[string]: any}, Key: string | number) -> any,
 	__newindex: (t: {[string]: any}, Key: string, Value: any) -> (),
 	
 	New: <T>(Structure: Structure<T>) -> Gui<T>,
-	FindFirstChild: <Child, Parent>(self: Gui<Parent>, Name: string, Recursive: boolean?) -> Gui<Child>,
-
-	Value: ComponentValue.new
-}
+	
+	ReactiveValue: ComponentValue.new
+} & GuiMethods<any>
 
 
 local function HasProperty(Object: any, Property: any): (boolean, any)
@@ -37,14 +49,18 @@ local module: Module = {} :: Module
 module.__index = function(t, Key)
 	local KeyType = typeof(Key)
 	if KeyType ~= "string" then
-		error(`Trying to index a {KeyType}.`, 2)
+		error(`Type of Key ~= string.`, 2)
 	end
-
+	
 	if Keys.Accept[Key] then
 		return module[Key]
 	end
 
 	local PropertyExist, PropertyValue = HasProperty(rawget(t, "_Instance"), Key)
+	local ValueType = typeof(PropertyValue)
+	if ValueType == "function" or ValueType == "RBXScriptSignal" then
+		error(`You can't assing {ValueType} to {Key}.`, 2)
+	end
 
 	return if PropertyExist then PropertyValue else module[Key]
 end
@@ -54,10 +70,15 @@ module.__newindex = function(t, Key, Value)
 		rawset(t, Key, Value)
 		return
 	end
-
+	
 	local Object = rawget(t, "_Instance")
 	if not Object then
 		return
+	end
+
+	local ValueType = typeof(Value)
+	if ValueType == "function" or ValueType == "RBXScriptSignal" then
+		error(`You can't assing {ValueType} to {Key}.`, 2)
 	end
 
 	(Object :: any)[Key] = Value
@@ -123,13 +144,13 @@ local function StructureToInstance<T>(Structure: {[string]: any}, self: Gui<T>):
 		end 	
 		
 		if typeof(Value) and typeof(ReturnedValue) == "function" then
-			error("Use events index.")
+			error("Read the docs to learn more about connecting events.", 2)
 		end
 		
 		if typeof(Value) == "table" and getmetatable(Value) == ComponentValue then
 			(Object :: any)[Property] = Value();
 
-			table.insert(self._Connections, (Value :: ComponentValue.Value).Event:Connect(function(NewValue: any)
+			table.insert(self._Connections, (Value :: ComponentValue.ReactiveValue).Event:Connect(function(NewValue: any)
 				(Object :: any)[Property] = NewValue
 			end))
 
@@ -152,22 +173,36 @@ function module.New<T>(Structure: Structure<T>): Gui<T>
 	return self
 end
 
-function module:FindFirstChild<Child, Parent>(Name, Recursive): Gui<Child>
-	for _, Child in self._Children do
+function module:FindFirstChild<Child>(Name, Recursive): Gui<Child>?
+	for _, Child in self._Children :: {[number]: {Name: string, Value: Gui<any>}} do
 		if Child.Name == Name then
 			return Child.Value
 		end
 	end
 
 	if not Recursive then
-		return nil :: any
+		return
 	end
 
-	for _, Child in self._Children do
-		Child.Value:FindFirstChild(Name, true)
+	for _, Child in self._Children :: {[number]: {Name: string, Value: Gui<any>}} do
+		local Grandchild = Child.Value:FindFirstChild(Name, true)
+		if Grandchild then
+			return Grandchild
+		end
 	end
+
+	return
 end
 
-module.Value = ComponentValue.new
+function module:GetChildren()
+	local Children = {}
+	for _, Child in self._Children :: {[number]: {Name: string, Value: Gui<any>}} do
+		table.insert(Children, Child.Value)
+	end
+
+	return Children
+end
+
+module.ReactiveValue = ComponentValue.new
 
 return module
